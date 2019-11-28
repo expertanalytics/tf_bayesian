@@ -29,15 +29,17 @@ class BayesianModel(tf.keras.models.Model):
             raise KeyError("No support for datatype {}, please use one of {}".format(
                 type(x), datatypes_to_fit.keys()))
 
+        if validation_split != 0.0:
+            raise ValueError("Validation split is unsupported")
+
         return fit_method(
             self,
             x,
-            y,
-            batch_size,
-            epochs,
-            verbose,
-            callbacks,
-            validation_split,
+            targets=y,
+            batch_size=batch_size,
+            epochs=epochs,
+            verbose=verbose,
+            callbacks=callbacks,
             **kwargs,
         )
 
@@ -54,6 +56,7 @@ class BayesianModel(tf.keras.models.Model):
             loss_val = self.loss(y, yhat)
         self.loss_val = loss_val
         self.grads = tape.gradient(loss_val, self.trainable_variables)
+        return loss_val
 
 
 
