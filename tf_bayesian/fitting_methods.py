@@ -82,8 +82,7 @@ def ndarray_fit(
         num_samples=None if steps_per_epoch else num_samples_or_steps,
         steps=steps_per_epoch
         )
-    print("PROGBAR INFO", progbar.params["samples"])
-    print("OTHER INFO", num_samples_or_steps)
+    print(" -------- CALLBACKS ", [c for c in callbacks])
 
     for e in range(initial_epoch, epochs):
         epoch_logs = {}
@@ -97,6 +96,7 @@ def ndarray_fit(
         for batch_index, batch in enumerate(bm):
             batch_logs = {"batch": batch_index, "size": 1}
             progbar.on_batch_begin(batch_index, batch_logs)
+            callbacks._call_batch_hook(mode, "begin", batch_index, batch_logs)
             # TODO: rewrite to not do boolean check each loop
             if targets:
                 ybatch = targets[0][batch]
@@ -106,20 +106,21 @@ def ndarray_fit(
                 zip(model.grads, model.trainable_variables))
             if not isinstance(batch_outs, list):
                 batch_outs = [batch_outs]
-
             if batch_index == 0:
                 aggregator.create(batch_outs)
+
             aggregator.aggregate(batch_outs)
             batch_logs = cbks.make_logs(model, batch_logs, batch_outs, mode)
-            if mode == ModeKeys.TRAIN:
-                # Epochs only apply to `fit`.
-                callbacks.on_epoch_end(e, epoch_logs)
             progbar.on_batch_end(batch_index, batch_logs)
+            callbacks._call_batch_hook(mode, "end", batch_index, batch_logs)
 
         aggregator.finalize()
         results = aggregator.results
         epoch_logs = cbks.make_logs(model, epoch_logs, results, mode)
         progbar.on_epoch_end(e, epoch_logs)
+        if mode == ModeKeys.TRAIN:
+            # Epochs only apply to `fit`.
+            callbacks.on_epoch_end(e, epoch_logs)
 
         if len(results) == 1:
             results = results[0] 

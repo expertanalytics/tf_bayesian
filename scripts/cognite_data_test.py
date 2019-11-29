@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
+import matplotlib.pyplot as plt
 
 from cognite.client import CogniteClient
 from sklearn.model_selection import train_test_split
@@ -127,4 +128,5 @@ MODEL_INST.compile(
         experimental_run_tf_function=False,
         )
 retval = MODEL_INST.fit(Xtr, Ytr, batch_size=BATCH_SIZE, epochs=EPOCHS)
-print(retval.history.keys())
+plt.plot(retval.history["loss"])
+plt.show()
