@@ -4,6 +4,7 @@ from tensorflow.python.keras.engine.training_arrays import _get_num_samples_or_s
 from tensorflow.python.keras import callbacks as cbks
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.keras.utils.mode_keys import ModeKeys
+import time
 
 import numpy as np
 
@@ -101,17 +102,18 @@ def ndarray_fit(
                 ybatch = targets[0][batch]
             xbatch = inputs[batch]
             batch_outs = model.compute_grads(xbatch, ybatch)
-            if not isinstance(batch_outs, list):
-                batch_outs = [batch_outs]
-
             model.optimizer.apply_gradients(
                 zip(model.grads, model.trainable_variables))
+            if not isinstance(batch_outs, list):
+                batch_outs = [batch_outs]
 
             if batch_index == 0:
                 aggregator.create(batch_outs)
             aggregator.aggregate(batch_outs)
-
             batch_logs = cbks.make_logs(model, batch_logs, batch_outs, mode)
+            if mode == ModeKeys.TRAIN:
+                # Epochs only apply to `fit`.
+                callbacks.on_epoch_end(e, epoch_logs)
             progbar.on_batch_end(batch_index, batch_logs)
 
         aggregator.finalize()
@@ -120,7 +122,10 @@ def ndarray_fit(
         progbar.on_epoch_end(e, epoch_logs)
 
         if len(results) == 1:
-           results = results[0] 
+            results = results[0] 
     callbacks._call_end_hook(mode)
     print("")
+    if mode == ModeKeys.TRAIN:
+        return model.history
+    return results
 

@@ -43,7 +43,7 @@ class BayesianModel(tf.keras.models.Model):
             **kwargs,
         )
 
-    def compute_grads(self, x, y):
+    def compute_grads(self, x, y, do_print=False):
         # TODO: do conversion outside of train loop?
         if isinstance(x, np.ndarray):
             x = tf.convert_to_tensor(x, self.dtype)
