@@ -8,7 +8,7 @@ class BayesianMeanSquaredError(tf.keras.losses.Loss):
         self.one_half = tf.constant(0.5, dtype=self.model.dtype)
         super(BayesianMeanSquaredError, self).__init__()
 
-    #@tf.function
+    @tf.function
     def call(self, y_true, pred):
         """
         Computes the loss for a model outputing yhat and log sigma^2

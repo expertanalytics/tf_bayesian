@@ -46,6 +46,9 @@ class BatchManager:
     def __iter__(self,):
         return self
 
+    def __len__(self,):
+        return self.n + 1
+
 
 if __name__ == "__main__":
     import sys
