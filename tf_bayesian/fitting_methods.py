@@ -82,7 +82,6 @@ def ndarray_fit(
         num_samples=None if steps_per_epoch else num_samples_or_steps,
         steps=steps_per_epoch
         )
-    print(" -------- CALLBACKS ", [c for c in callbacks])
 
     for e in range(initial_epoch, epochs):
         epoch_logs = {}
@@ -102,8 +101,10 @@ def ndarray_fit(
                 ybatch = targets[0][batch]
             xbatch = inputs[batch]
             batch_outs = model.compute_grads(xbatch, ybatch)
-            model.optimizer.apply_gradients(
-                zip(model.grads, model.trainable_variables))
+            if mode == ModeKeys.TRAIN:
+                model.optimizer.apply_gradients(
+                    zip(model.grads, model.trainable_variables))
+
             if not isinstance(batch_outs, list):
                 batch_outs = [batch_outs]
             if batch_index == 0:

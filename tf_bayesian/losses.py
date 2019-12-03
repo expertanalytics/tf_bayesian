@@ -15,8 +15,6 @@ class BayesianMeanSquaredError(tf.keras.losses.Loss):
         in accordance with eq. 8 in https://arxiv.org/pdf/1703.04977.pdf
         """
         kld = tf.reduce_sum(self.model.losses)
-        # y_pred, log_var = pred
-        #print("SHAPES")
         y_pred, log_var = tf.unstack(pred, num=2)
         var_m2 = tf.exp(-log_var)
         diff = tf.square(y_true - y_pred)

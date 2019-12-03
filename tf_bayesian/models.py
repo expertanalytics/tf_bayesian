@@ -8,6 +8,8 @@ from tf_bayesian.fitting_methods import ndarray_fit
 class BayesianModel(tf.keras.Model):
     def __init__(self,):
         super(BayesianModel, self).__init__()
+        self.grads = []
+        self.loss_val = None
 
     def fit(
             self,
@@ -57,6 +59,42 @@ class BayesianModel(tf.keras.Model):
         self.loss_val = loss_val
         self.grads = tape.gradient(loss_val, self.trainable_variables)
         return loss_val
+
+    @tf.function
+    def std(self, x, N=10):
+        """Computes the standard deviation for a batch of samples
+        """
+        x = tf.dtypes.cast(x, self.dtype)
+        x = tf.unstack(x, axis=0)
+        variances = []
+        for sample in x:
+            sample_list = [sample for i in range(N)]
+            sample_stacked = tf.stack(sample_list)
+            var = self.estimate_variance(sample_stacked)
+            variances.append(var)
+        return tf.sqrt(tf.stack(variances))
+    
+    @tf.function
+    def predict_mean(self, x, N=10):
+        means = []
+        x = tf.dtypes.cast(x, self.dtype)
+        x = tf.unstack(x, axis=0)
+        for sample in x:
+            sample_list = [sample for i in range(N)]
+            sample_stacked = tf.stack(sample_list)
+            sample_stacked = tf.convert_to_tensor(sample_stacked, self.dtype)
+            preds = tf.reduce_mean(self.__call__(sample_stacked))
+            means.append(preds)
+        return tf.stack(means)
+
+    def estimate_variance(self, x):
+        retval = self.__call__(x)
+        yhat, log_var = tf.unstack(retval)
+        var = tf.exp(log_var)
+        mean_pred = tf.reduce_mean(yhat, axis=0, keepdims=True)
+        weight_var = tf.reduce_mean((yhat - mean_pred), axis=0)
+        return weight_var + tf.reduce_mean(var, axis=0)
+
 
 
 
