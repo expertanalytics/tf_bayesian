@@ -1,12 +1,15 @@
 import tensorflow as tf
 import tensorflow_probability as tfp
 import numpy as np
+import matplotlib.pyplot as plt
 
 from cognite.client import CogniteClient
 from sklearn.model_selection import train_test_split
 
 from tf_bayesian.models import BayesianModel
 from tf_bayesian.losses import BayesianMeanSquaredError
+from tf_bayesian.callbacks import MetricLogger
+from tf_bayesian.metrics import coef_determination
 
 tf.keras.backend.set_floatx('float32')
 
@@ -115,16 +118,22 @@ ETA = 1e-3
 BATCH_SIZE = 74
 BUFFER_SIZE = 1024
 EVALUATION_INTERVAL = 10
-EPOCHS = 3
+EPOCHS = 10
+CALLBACKS = [MetricLogger(coef_determination, (Xtr, Ytr)),]
 
-"same size batches"
 # IN_TENSOR, OUT = model_constructor(Xtr, Ytr)
 # MODEL_INST = tf.keras.models.Model(inputs=IN_TENSOR, outputs=OUT)
 MODEL_INST = BayesianConvNet(Ytr.shape[1])
+
 MODEL_INST.compile(
         loss=BayesianMeanSquaredError(MODEL_INST),
         optimizer=tf.keras.optimizers.Adam(),
         experimental_run_tf_function=False,
         )
-retval = MODEL_INST.fit(Xtr, Ytr, batch_size=BATCH_SIZE, epochs=EPOCHS)
-print(retval.history.keys())
+
+retval = MODEL_INST.fit(Xtr, Ytr, batch_size=BATCH_SIZE, epochs=EPOCHS, callbacks=CALLBACKS)
+
+fig, ax = plt.subplots(ncols=2)
+ax[0].plot(retval.history["loss"])
+ax[1].plot(CALLBACKS[0].epoch_metric_logs)
+plt.show()

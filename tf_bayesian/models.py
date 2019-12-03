@@ -5,7 +5,7 @@ import numpy as np
 from tf_bayesian.fitting_methods import ndarray_fit
 
 
-class BayesianModel(tf.keras.models.Model):
+class BayesianModel(tf.keras.Model):
     def __init__(self,):
         super(BayesianModel, self).__init__()
 
@@ -43,7 +43,7 @@ class BayesianModel(tf.keras.models.Model):
             **kwargs,
         )
 
-    def compute_grads(self, x, y, do_print=False):
+    def compute_grads(self, x, y):
         # TODO: do conversion outside of train loop?
         if isinstance(x, np.ndarray):
             x = tf.convert_to_tensor(x, self.dtype)
