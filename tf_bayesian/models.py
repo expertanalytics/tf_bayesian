@@ -82,8 +82,10 @@ class BayesianModel(tf.keras.Model):
         for sample in x:
             sample_list = [sample for i in range(N)]
             sample_stacked = tf.stack(sample_list)
-            sample_stacked = tf.convert_to_tensor(sample_stacked, self.dtype)
-            preds = tf.reduce_mean(self.__call__(sample_stacked))
+            sample_stacked = tf.dtypes.cast(sample_stacked, self.dtype)
+            sample_outs = self.__call__(sample_stacked)
+            y_out, std_out = tf.unstack(sample_outs, axis=0)
+            preds = tf.reduce_mean(y_out, axis=0)
             means.append(preds)
         return tf.stack(means)
 

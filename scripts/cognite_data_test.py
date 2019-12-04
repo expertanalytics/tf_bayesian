@@ -57,9 +57,9 @@ def construct_data(timeseries, window_length, future_steps, y_cols=[]):
 
 
 WINDOW = 50
-FUTURE = 2
-TIME_FRAME = {"start": "4w-ago", "end": "1d-ago",
-              "aggregates": ["average"], "granularity": "1h"}
+FUTURE = 10
+TIME_FRAME = {"start": "2w-ago", "end": "1d-ago",
+              "aggregates": ["average"], "granularity": "1s"}
 KEYS = list(TIME_FRAME.keys())
 KEYS.sort()
 DATA_FN_ROOT = ""
@@ -115,10 +115,11 @@ Yte = (Yte - Ymu)/Ysigma
 -------- MODEL SPEC ---------
 """
 ETA = 1e-3
-BATCH_SIZE = 74
+BATCH_SIZE = 150
 BUFFER_SIZE = 1024
 EVALUATION_INTERVAL = 10
 EPOCHS = 10
+# tf.config.experimental_run_functions_eagerly(True)
 CALLBACKS = [MetricLogger(coef_determination, (Xtr, Ytr)),
         StdLogger((Xtr[:110], Ytr[:110]))]
 
@@ -135,7 +136,13 @@ MODEL_INST.compile(
 retval = MODEL_INST.fit(Xtr, Ytr, batch_size=BATCH_SIZE,
                         epochs=EPOCHS, callbacks=CALLBACKS)
 
-fig, ax = plt.subplots(ncols=2)
-ax[0].plot(retval.history["loss"])
-ax[1].plot(CALLBACKS[0].epoch_metric_logs)
+fig, ax = plt.subplots(ncols=2, nrows=2)
+ax[0, 0].plot(retval.history["loss"])
+ax[0, 1].plot(CALLBACKS[0].epoch_metric_logs)
+
+z_array = np.array(CALLBACKS[1].z_log)
+z_means = z_array.mean((1, 2))
+z_std = z_array.std((1, 2))
+ax[1, 0].plot(z_means)
+ax[1, 1].plot(z_std)
 plt.show()
