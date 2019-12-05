@@ -6,6 +6,10 @@ from tf_bayesian.fitting_methods import ndarray_fit
 
 
 class BayesianModel(tf.keras.Model):
+    """Custom class for a bayesian neural network. Implementing a tf 2 style
+    training loop. Assumes that the network predicts a tuple (y, sigma) where 
+    y is a vector/tensor and sigma is scalar valued for each sample.
+    """
     def __init__(self,):
         super(BayesianModel, self).__init__()
         self.grads = []
@@ -22,6 +26,18 @@ class BayesianModel(tf.keras.Model):
             validation_split=0.0,
             **kwargs,
     ):
+        """Invoking the training loop for the given dataset.
+
+        Arguments:
+            x: array type of samples
+            y: array type of targets
+            batch_size: integer
+            epochs: integer
+            verbose: boolean trigger for verbosity of training.
+                True for verbose training, False for silent.
+            callbacks: iterable of tf.keras.callbacks.Callback instances
+            validation_split: deprecated, use validation callback instead.
+        """
         datatypes_to_fit = {
             np.ndarray: ndarray_fit
         }
@@ -32,7 +48,8 @@ class BayesianModel(tf.keras.Model):
                 type(x), datatypes_to_fit.keys()))
 
         if validation_split != 0.0:
-            raise ValueError("Validation split is unsupported")
+            raise ValueError(
+                "Validation split is unsupported, use validation callback instead")
 
         return fit_method(
             self,
@@ -46,6 +63,18 @@ class BayesianModel(tf.keras.Model):
         )
 
     def compute_grads(self, x, y):
+        """Computes the loss and gradients for a batch of samples, x, and
+        corresponding labels/targets y. This method is stateful and assigns
+        self variables BayesianModel.loss_val and BayesianModel.gradients
+        for use with a tf.optimizer object.
+
+        Arguments:
+            x: array type of samples
+            y: array type of targets corresponding to x
+
+        Returns:
+            loss value tensor for the given sample-targets batch
+        """
         # TODO: do conversion outside of train loop?
         if isinstance(x, np.ndarray):
             x = tf.convert_to_tensor(x, self.dtype)
@@ -63,6 +92,13 @@ class BayesianModel(tf.keras.Model):
     @tf.function
     def std(self, x, N=10):
         """Computes the standard deviation for a batch of samples
+
+        Arguments:
+            x: array type of a batch of different samples
+
+        Returns:
+            standard deviation of the predctions corresponding
+            to the samples x
         """
         x = tf.dtypes.cast(x, self.dtype)
         x = tf.unstack(x, axis=0)
@@ -73,9 +109,17 @@ class BayesianModel(tf.keras.Model):
             var = self.estimate_variance(sample_stacked)
             variances.append(var)
         return tf.sqrt(tf.stack(variances))
-    
+
     @tf.function
     def predict_mean(self, x, N=10):
+        """Computes the mean prediction of a batch of samples. 
+
+        Arguments:
+            x: array type of a batch of different samples
+
+        Returns:
+            Tensor of the predicted means
+        """
         means = []
         x = tf.dtypes.cast(x, self.dtype)
         x = tf.unstack(x, axis=0)
@@ -90,14 +134,18 @@ class BayesianModel(tf.keras.Model):
         return tf.stack(means)
 
     def estimate_variance(self, x):
+        """Computes an estimate of the predicted variance for a single sample x.
+        The variance is computed from eq. 9 in https://arxiv.org/pdf/1703.04977.pdf
+
+        Arguments:
+            x: array type a repeated sample on which to perform prediction
+
+        Returns:
+            Predicted variance for the repeated sample x
+        """
         retval = self.__call__(x)
         yhat, log_var = tf.unstack(retval)
         var = tf.exp(log_var)
         mean_pred = tf.reduce_mean(yhat, axis=0, keepdims=True)
         weight_var = tf.reduce_mean((yhat - mean_pred), axis=0)
         return weight_var + tf.reduce_mean(var, axis=0)
-
-
-
-
-

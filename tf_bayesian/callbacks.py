@@ -2,6 +2,7 @@ import tensorflow as tf
 import numpy as np
 
 from tf_bayesian.utils import BatchManager
+# TODO: Datasets should not be args to logger classes. Make attr of model instead?
 
 
 class MetricLogger(tf.keras.callbacks.Callback):
@@ -40,12 +41,15 @@ class MetricLogger(tf.keras.callbacks.Callback):
 class StdLogger(tf.keras.callbacks.Callback):
     """Logger callback for the standard deviation of a bayesian network.
 
-    Monitors the quality of the standard error predicitons of a bayesian neural net
+    Monitors the quality of the standard error predicitons of a
+    bayesian neural net
     """
 
     def __init__(self, datasets):
         super(StdLogger, self).__init__()
         self.datasets = datasets
+        self.std_log = None
+        self.z_log = None
 
     def on_train_begin(self, logs={}):
         self.std_log = []
@@ -63,5 +67,4 @@ class StdLogger(tf.keras.callbacks.Callback):
             means = self.model.predict_mean(xbatch)
             z = ((ybatch - means)/stds)
             z_arr[batch] = z
-
         self.z_log.append(z_arr)
