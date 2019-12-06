@@ -7,9 +7,10 @@ from tf_bayesian.fitting_methods import ndarray_fit
 
 class BayesianModel(tf.keras.Model):
     """Custom class for a bayesian neural network. Implementing a tf 2 style
-    training loop. Assumes that the network predicts a tuple (y, sigma) where 
+    training loop. Assumes that the network predicts a tuple (y, sigma) where
     y is a vector/tensor and sigma is scalar valued for each sample.
     """
+
     def __init__(self,):
         super(BayesianModel, self).__init__()
         self.grads = []
@@ -51,6 +52,9 @@ class BayesianModel(tf.keras.Model):
             raise ValueError(
                 "Validation split is unsupported, use validation callback instead")
 
+        if not x.shape[0] == y.shape[0]:
+            raise ValueError("x and y must have same first dimension")
+
         return fit_method(
             self,
             x,
@@ -85,7 +89,8 @@ class BayesianModel(tf.keras.Model):
             tape.watch(y)
             yhat = self.__call__(x)
             loss_val = self.loss(y, yhat)
-        self.loss_val = loss_val
+            kld = tf.reduce_sum(self.losses)
+            self.loss_val = loss_val + kld
         self.grads = tape.gradient(loss_val, self.trainable_variables)
         return loss_val
 
@@ -102,17 +107,30 @@ class BayesianModel(tf.keras.Model):
         """
         x = tf.dtypes.cast(x, self.dtype)
         x = tf.unstack(x, axis=0)
-        variances = []
-        for sample in x:
-            sample_list = [sample for i in range(N)]
-            sample_stacked = tf.stack(sample_list)
-            var = self.estimate_variance(sample_stacked)
-            variances.append(var)
-        return tf.sqrt(tf.stack(variances))
+        shape_x = tf.shape(x)
+        tile_shape = tf.concat([[N], tf.ones(tf.size(shape_x) - 1)], 0)
+        tile_shape = tf.dtypes.cast(tile_shape, tf.int32)
+        back_transpose = tf.range(2, tf.size(shape_x)+1)
+        transpose_order = tf.concat([[1, 0], back_transpose], 0)
+
+        tile_x = tf.tile(x, tile_shape)
+        primary_shape = tf.stack([N, shape_x[0]])
+        tile_first_shape = tf.concat([primary_shape, shape_x[1:]], 0)
+        tile_x = tf.reshape(tile_x, tile_first_shape)
+        tile_x_sample_first = tf.transpose(tile_x, transpose_order)
+        sample_stacked = tf.dtypes.cast(tile_x_sample_first, self.dtype)
+        var = tf.map_fn(
+            self.estimate_variance,
+            sample_stacked,
+            parallel_iterations=10,
+            back_prop=False,
+            infer_shape=False
+        )
+        return tf.sqrt(var)
 
     @tf.function
     def predict_mean(self, x, N=10):
-        """Computes the mean prediction of a batch of samples. 
+        """Computes the mean prediction of a batch of samples.
 
         Arguments:
             x: array type of a batch of different samples
@@ -123,22 +141,27 @@ class BayesianModel(tf.keras.Model):
         means = []
         x = tf.dtypes.cast(x, self.dtype)
         x = tf.unstack(x, axis=0)
-        for sample in x:
-            sample_list = [sample for i in range(N)]
-            sample_stacked = tf.stack(sample_list)
-            sample_stacked = tf.dtypes.cast(sample_stacked, self.dtype)
-            sample_outs = self.__call__(sample_stacked)
-            y_out, std_out = tf.unstack(sample_outs, axis=0)
-            preds = tf.reduce_mean(y_out, axis=0)
-            means.append(preds)
-        return tf.stack(means)
+        shape_x = tf.shape(x)
+        tile_shape = tf.concat([[N], tf.ones(tf.size(shape_x) - 1)], 0)
+        tile_shape = tf.dtypes.cast(tile_shape, tf.int32)
+
+        tile_x = tf.tile(x, tile_shape)
+        sample_stacked = tf.dtypes.cast(tile_x, self.dtype)
+        sample_outs = self.__call__(sample_stacked)
+        y_out, _ = tf.unstack(sample_outs, axis=0)
+
+        primary_shape = tf.stack([N, shape_x[0]])
+        out_shape = tf.concat([primary_shape, y_out.shape[1:]], 0)
+        y_out = tf.reshape(y_out, out_shape)
+        means = tf.reduce_mean(y_out, axis=0)
+        return means
 
     def estimate_variance(self, x):
         """Computes an estimate of the predicted variance for a single sample x.
         The variance is computed from eq. 9 in https://arxiv.org/pdf/1703.04977.pdf
 
         Arguments:
-            x: array type a repeated sample on which to perform prediction
+            x: array type a repeated sample on which to perform prediction.
 
         Returns:
             Predicted variance for the repeated sample x
@@ -146,6 +169,8 @@ class BayesianModel(tf.keras.Model):
         retval = self.__call__(x)
         yhat, log_var = tf.unstack(retval)
         var = tf.exp(log_var)
-        mean_pred = tf.reduce_mean(yhat, axis=0, keepdims=True)
-        weight_var = tf.reduce_mean((yhat - mean_pred), axis=0)
+        square_mean_pred = tf.square(
+            tf.reduce_mean(yhat, axis=0, keepdims=True))
+        weight_var = tf.reduce_mean(
+            (tf.square(yhat) - square_mean_pred), axis=0)
         return weight_var + tf.reduce_mean(var, axis=0)

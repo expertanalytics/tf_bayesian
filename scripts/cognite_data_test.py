@@ -126,7 +126,6 @@ CALLBACKS = [MetricLogger(coef_determination, (Xtr, Ytr)),
 # IN_TENSOR, OUT = model_constructor(Xtr, Ytr)
 # MODEL_INST = tf.keras.models.Model(inputs=IN_TENSOR, outputs=OUT)
 MODEL_INST = BayesianConvNet(Ytr.shape[1])
-
 MODEL_INST.compile(
     loss=BayesianMeanSquaredError(MODEL_INST),
     optimizer=tf.keras.optimizers.Adam(),
