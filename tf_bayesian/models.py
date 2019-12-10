@@ -11,8 +11,18 @@ class BayesianModel(tf.keras.Model):
     y is a vector/tensor and sigma is scalar valued for each sample.
     """
 
-    def __init__(self,):
+    def __init__(
+            self,
+            regularization=None,
+            include_epistemic=True
+    ):
         super(BayesianModel, self).__init__()
+        if callable(regularization):
+            self.do_reg = True
+            self.regularization = regularization
+        else:
+            self.do_reg = False
+
         self.grads = []
         self.loss_val = None
 
@@ -87,11 +97,17 @@ class BayesianModel(tf.keras.Model):
         with tf.GradientTape(persistent=False) as tape:
             tape.watch(x)
             tape.watch(y)
+            tape.watch(self.trainable_variables)
             yhat = self.__call__(x)
             loss_val = self.loss(y, yhat)
-            kld = tf.reduce_sum(self.losses)
+            kld = tf.reduce_sum(self.losses) / \
+                tf.dtypes.cast(tf.shape(x)[0], yhat.dtype)
             self.loss_val = loss_val + kld
-        self.grads = tape.gradient(loss_val, self.trainable_variables)
+            if self.do_reg:
+                for v in self.trainable_variables:
+                    self.loss_val = self.loss_val + \
+                        self.regularization(v)
+        self.grads = tape.gradient(self.loss_val, self.trainable_variables)
         return loss_val
 
     @tf.function
@@ -148,7 +164,7 @@ class BayesianModel(tf.keras.Model):
         tile_x = tf.tile(x, tile_shape)
         sample_stacked = tf.dtypes.cast(tile_x, self.dtype)
         sample_outs = self.__call__(sample_stacked)
-        y_out, _ = tf.unstack(sample_outs, axis=0)
+        y_out, *_ = tf.unstack(sample_outs, axis=0)
 
         primary_shape = tf.stack([N, shape_x[0]])
         out_shape = tf.concat([primary_shape, y_out.shape[1:]], 0)

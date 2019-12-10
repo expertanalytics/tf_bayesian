@@ -19,10 +19,13 @@ class MetricLogger(tf.keras.callbacks.Callback):
             metrics = [metrics]
         self.metrics = metrics
         self.datasets = datasets
-        self.epoch_metric_logs = []
+        self.metrics_logs = []
 
     def on_train_begin(self, logs={}):
         self.metrics_logs = []
+
+    def on_train_end(self, logs={}):
+        self.metrics_logs = np.array(self.metrics_logs)
 
     def on_epoch_end(self, e, logs={}):
         bm = BatchManager(self.datasets[0].shape[1], 100, shuffle=False)
@@ -35,7 +38,7 @@ class MetricLogger(tf.keras.callbacks.Callback):
             for j, metric in enumerate(self.metrics):
                 measured = metric(ybatch, batch_outs)
                 tmp_metrics[i, j] = measured
-        self.epoch_metric_logs.append(tmp_metrics.mean(0))
+        self.metrics_logs.append(tmp_metrics.mean(0))
 
 
 class StdLogger(tf.keras.callbacks.Callback):
@@ -68,3 +71,18 @@ class StdLogger(tf.keras.callbacks.Callback):
             z = ((ybatch - means)/stds)
             z_arr[batch] = z
         self.z_log.append(z_arr)
+
+class InferenceLogger(tf.keras.callbacks.Callback):
+    """
+    """
+    
+    def __init__(self):
+        super(InferenceLogger, self).__init__()
+        self.loss_logs = []
+    
+    def on_epoch_end(self, e, logs={}):
+        to_log = tf.reduce_sum(self.model.losses).numpy()
+        self.loss_logs.append(to_log)
+
+    def on_train_end(self, logs={}):
+        self.loss_logs = np.array(self.loss_logs)
