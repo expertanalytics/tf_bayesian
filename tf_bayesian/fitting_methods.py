@@ -92,6 +92,8 @@ def ndarray_fit(
             callbacks.on_epoch_begin(e, epoch_logs)
 
         bm = BatchManager(inputs.shape[0], batch_size, shuffle=shuffle)
+        posterior_weight = tf.constant(inputs.shape[0], model.dtype)
+
         for batch_index, batch in enumerate(bm):
             batch_logs = {"batch": batch_index, "size": 1}
             progbar.on_batch_begin(batch_index, batch_logs)
@@ -100,7 +102,7 @@ def ndarray_fit(
             if targets:
                 ybatch = targets[0][batch]
             xbatch = inputs[batch]
-            batch_outs = model.compute_grads(xbatch, ybatch)
+            batch_outs = model.compute_grads(xbatch, ybatch, posterior_weight)
             if mode == ModeKeys.TRAIN:
                 model.optimizer.apply_gradients(
                     zip(model.grads, model.trainable_variables))

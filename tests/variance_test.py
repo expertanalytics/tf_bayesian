@@ -13,6 +13,7 @@ from tf_bayesian.losses import BayesianMeanSquaredError, EpistemicMeanSquaredErr
 np.random.seed(42)
 pl = tfp.layers
 kl = tf.keras.layers
+tf.config.experimental_run_functions_eagerly(True)
 
 
 class BayesianDense(BayesianModel):
@@ -60,74 +61,107 @@ class BayesianDense(BayesianModel):
         return tf.stack(outputs)
 
 
-def numpy_mse(ytrue, ypred):
-    return np.mean(np.square(ytrue-ypred))
+def posterior_moments(model):
+    layers = model.layers
+    means = []
+    stds = []
+    for l in layers:
+        k_post = l.kernel_posterior
+        means.append(k_post.mean())
+        stds.append(k_post.stddev())
+    return means, stds
 
 
-class TestModeltypes(unittest.TestCase):
+class TestTraining(unittest.TestCase):
     x = np.random.uniform(-10, 10, size=(10000, 3))
     x_test = np.random.uniform(-10, 10, size=(1000, 3))
     test_in = np.array([[0.5, 0.5, 1], [2, 2, 3]])
-    epochs = 10
+    epochs = 1
     batch_size = 200
 
-    def test_mse(self):
-        self.assertTrue(numpy_mse(self.x, self.x) < 1e-13)
+    def test_posteriors(self):
+        tf.keras.backend.clear_session()
+        model = BayesianDense(3, include_epistemic=False,
+                              dense_layer=pl.DenseFlipout)
+
+        callbacks = [MetricLogger([mse], (self.x_test, self.x_test))]
+        opt = tf.keras.optimizers.Adam()
+        model.compile(loss=EpistemicMeanSquaredError(model), optimizer=opt)
+        _ = model(self.test_in)
+
+        pre_means, pre_stds = posterior_moments(model)
+        history = model.fit(
+            self.x, self.x, batch_size=self.batch_size, epochs=self.epochs, verbose=0, callbacks=callbacks)
+
+        post_means, post_stds = posterior_moments(model)
+        means = [pre_means, post_means]
+        stds = [pre_stds, post_stds]
+        moments = [means, stds]
+        for moment in moments:
+            for i, pre in enumerate(moment[0]):
+                post = moment[1][i]
+                is_equal = tf.equal(pre, post).numpy().all()
+                self.assertFalse(is_equal)
+
+    def test_weights(self):
+        tf.keras.backend.clear_session()
+        model = BayesianDense(3, include_epistemic=False,
+                              dense_layer=pl.DenseFlipout)
+
+        callbacks = [MetricLogger([mse], (self.x_test, self.x_test))]
+        opt = tf.keras.optimizers.Adam()
+        model.compile(loss=EpistemicMeanSquaredError(model), optimizer=opt)
+        _ = model(self.test_in)
+        pre_train_vars = [t.numpy() for t in model.trainable_variables]
+
+        history = model.fit(
+            self.x, self.x, batch_size=self.batch_size, epochs=self.epochs, verbose=0, callbacks=callbacks)
+        post_train_vars = [t.numpy() for t in model.trainable_variables]
+
+        for i, pre in enumerate(pre_train_vars):
+            post = post_train_vars[i]
+            is_equal = (pre == post).all()
+            self.assertFalse(is_equal)
+
+
+class TestModeltypes(unittest.TestCase):
+    n_features = 1
+    x = np.random.uniform(-10, 10, size=(10000, n_features))
+    x_test = np.random.uniform(-10, 10, size=(100, n_features))
+    test_in = np.array([[0.5, ]*n_features, [2, ]*n_features])
+    epochs = 1
+    batch_size = 200
 
     def test_aleatoric(self):
+        self.x_test.sort()
         tf.keras.backend.clear_session()
-        model = BayesianDense(3, dense_layer=kl.Dense)
+        model = BayesianDense(
+                self.n_features,
+                dense_layer=kl.Dense,
+                n_layers=1,
+                activation=tf.keras.activations.linear
+                )
+
         opt = tf.keras.optimizers.Adam()
         loss = BayesianMeanSquaredError()
         callbacks = [MetricLogger([mse], (self.x_test, self.x_test))]
         model.compile(loss=loss, optimizer=opt)
         history = model.fit(
             self.x, self.x, batch_size=self.batch_size, epochs=self.epochs, verbose=0, callbacks=callbacks)
+
         y_pred, _ = model(self.x_test).numpy()
+        std = model.std(self.x_test).numpy()
+        self.assertTrue((y_pred.shape == std.shape))
 
-        mse_log = callbacks[0].metrics_logs
-        mse_monotonic = np.all(np.diff(mse_log, axis=0) < 0)
-        testmse = numpy_mse(self.x_test, y_pred)
-        print("ALEATORIC MSE", testmse)
-        print("MSE HISTORY", mse_log)
-        print("------------------")
-        print()
-        self.assertTrue(mse_monotonic)
-        self.assertTrue(testmse < 1e-2)
-
-    def test_epistemic(self):
-        tf.keras.backend.clear_session()
-        model = BayesianDense(3, include_epistemic=False,
-                              dense_layer=pl.DenseReparameterization)
-        callbacks = [MetricLogger([mse], (self.x_test, self.x_test))]
-        opt = tf.keras.optimizers.Adam()
-        model.compile(loss=EpistemicMeanSquaredError(model), optimizer=opt)
-        history = model.fit(
-            self.x, self.x, batch_size=self.batch_size, epochs=self.epochs, verbose=0, callbacks=callbacks)
-        loss = history.history["loss"]
-        y_pred = np.squeeze(model.predict_mean(self.x_test).numpy())
-
-        mse_log = callbacks[0].metrics_logs
-        mse_monotonic = np.all(np.diff(mse_log, axis=0) < 0)
-        testmse = numpy_mse(self.x_test, y_pred)
-        print("EPISTEMIC MSE", testmse)
-        print("MSE HISTORY", mse_log)
-        print("------------------")
-        print()
-        self.assertTrue(mse_monotonic)
-        self.assertTrue(testmse < 1e-2)
 
 class TestNetworkMoments(unittest.TestCase):
 
-    def test_mean(self):
-        print("not testing moments")
-        return
+    def F_test_mean(self):
         np.random.seed(42)
         x = np.random.uniform(-10, 10, size=(10000, 3))
         x_test = np.random.uniform(-10, 10, size=(1000, 3))
         test_in = np.array([[0.5, 0.5, 1], [2, 2, 3]])
         epochs = 50
-        # tf.config.experimental_run_functions_eagerly(True)
         callbacks = [MetricLogger([mse], (x_test, x_test)), InferenceLogger()]
         model = BayesianDense(
             3, n_layers=2, hidden_nodes=5, regularization=None)
@@ -166,10 +200,7 @@ class TestNetworkMoments(unittest.TestCase):
 
 class TestErrorConformity(unittest.TestCase):
 
-    def test_homoscedastic(self):
-        print("not testing std")
-        return
-
+    def F_test_homoscedastic(self):
         def err(x, y):
             return np.random.normal(scale=0.1*np.abs(x.mean(1)))
 

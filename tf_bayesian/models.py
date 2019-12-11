@@ -76,7 +76,7 @@ class BayesianModel(tf.keras.Model):
             **kwargs,
         )
 
-    def compute_grads(self, x, y):
+    def compute_grads(self, x, y, posterior_weight):
         """Computes the loss and gradients for a batch of samples, x, and
         corresponding labels/targets y. This method is stateful and assigns
         self variables BayesianModel.loss_val and BayesianModel.gradients
@@ -100,13 +100,13 @@ class BayesianModel(tf.keras.Model):
             tape.watch(self.trainable_variables)
             yhat = self.__call__(x)
             loss_val = self.loss(y, yhat)
-            kld = tf.reduce_sum(self.losses) / \
-                tf.dtypes.cast(tf.shape(x)[0], yhat.dtype)
+            kld = tf.reduce_sum(self.losses) / posterior_weight
             self.loss_val = loss_val + kld
             if self.do_reg:
                 for v in self.trainable_variables:
                     self.loss_val = self.loss_val + \
                         self.regularization(v)
+
         self.grads = tape.gradient(self.loss_val, self.trainable_variables)
         return loss_val
 
@@ -121,28 +121,31 @@ class BayesianModel(tf.keras.Model):
             standard deviation of the predctions corresponding
             to the samples x
         """
-        x = tf.dtypes.cast(x, self.dtype)
-        x = tf.unstack(x, axis=0)
+        x = tf.convert_to_tensor(x, self.dtype)
         shape_x = tf.shape(x)
-        tile_shape = tf.concat([[N], tf.ones(tf.size(shape_x) - 1)], 0)
-        tile_shape = tf.dtypes.cast(tile_shape, tf.int32)
-        back_transpose = tf.range(2, tf.size(shape_x)+1)
-        transpose_order = tf.concat([[1, 0], back_transpose], 0)
+        tile_x_shape = tf.concat([[N], tf.ones(tf.size(shape_x) - 1)], 0)
+        tile_x_shape = tf.dtypes.cast(tile_x_shape, tf.int32)
 
-        tile_x = tf.tile(x, tile_shape)
+        tile_x = tf.tile(x, tile_x_shape)
+        # TODO: maybe add batchmanager here for mem issues?
+        tile_y, *tile_std = tf.unstack(self.__call__(tile_x), axis=0)
+
+        shape_y = tf.shape(tile_y)
+        tile_shape = tf.concat([[N], tf.ones(tf.size(shape_y) - 1)], 0)
+        tile_shape = tf.dtypes.cast(tile_shape, tf.int32)
+
         primary_shape = tf.stack([N, shape_x[0]])
-        tile_first_shape = tf.concat([primary_shape, shape_x[1:]], 0)
-        tile_x = tf.reshape(tile_x, tile_first_shape)
-        tile_x_sample_first = tf.transpose(tile_x, transpose_order)
-        sample_stacked = tf.dtypes.cast(tile_x_sample_first, self.dtype)
-        var = tf.map_fn(
-            self.estimate_variance,
-            sample_stacked,
-            parallel_iterations=10,
-            back_prop=False,
-            infer_shape=False
-        )
-        return tf.sqrt(var)
+        tile_first_shape = tf.concat([primary_shape, shape_y[1:]], 0)
+
+        tile_y = tf.reshape(tile_y, tile_first_shape)
+        tile_std = tf.reshape(tile_std, tile_first_shape)
+        var = tf.exp(tile_std)
+        square_mean_pred = tf.square(
+            tf.reduce_mean(tile_y, axis=0, keepdims=True))
+        weight_var = tf.reduce_mean(
+            (tf.square(tile_y) - square_mean_pred), axis=0)
+        tot_var = weight_var + tf.reduce_mean(var, axis=0)
+        return tf.sqrt(tot_var)
 
     @tf.function
     def predict_mean(self, x, N=10):
@@ -183,7 +186,7 @@ class BayesianModel(tf.keras.Model):
             Predicted variance for the repeated sample x
         """
         retval = self.__call__(x)
-        yhat, log_var = tf.unstack(retval)
+        yhat, *log_var = tf.unstack(retval)
         var = tf.exp(log_var)
         square_mean_pred = tf.square(
             tf.reduce_mean(yhat, axis=0, keepdims=True))
