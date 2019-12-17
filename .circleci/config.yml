@@ -4,7 +4,7 @@ jobs:
     build:
         working_directory: ~/tf_bayesian
         docker:
-            - image: circleci/python3.6.9
+            - image: circleci/python:3.6.9
               environment:
                   PIPENV_VENV_IN_PROJECT: true
         steps:
