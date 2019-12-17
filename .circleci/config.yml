@@ -17,3 +17,5 @@ jobs:
                 command: |
                     sudo pip install pipenv
                     pipenv install
+            - run:
+                python -m unittest -v tests/variance_test.py
