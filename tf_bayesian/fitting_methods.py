@@ -10,6 +10,41 @@ import numpy as np
 
 from tf_bayesian.utils import BatchManager
 
+def tfrecord_fit(
+        model,
+        inputs,
+        targets=None,
+        sample_weights=None,
+        batch_size=None,
+        epochs=1,
+        verbose=1,
+        callbacks=None,
+        val_inputs=None,
+        val_targets=None,
+        val_sample_weights=None,
+        shuffle=True,
+        initial_epoch=0,
+        steps_per_epoch=None,
+        validation_steps=None,
+        validation_freq=1,
+        mode=ModeKeys.TRAIN,
+        validation_in_fit=False,
+        prepared_feed_values_from_dataset=False,
+        steps_name='steps',
+        **kwargs
+):
+
+
+    # TODO: Define decoder
+    # TODO: Define preprocessor
+
+
+    dataset = dataset.map(normalize)
+    dataset = dataset.shuffle(do_shuffle)
+    dataset = dataset.repeat()
+    dataset = dataset.batch(batch_size)
+
+
 
 def ndarray_fit(
         model,
