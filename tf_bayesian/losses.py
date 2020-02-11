@@ -31,6 +31,28 @@ class BayesianMeanSquaredError(tf.keras.losses.Loss):
             tf.reduce_sum(internal_prod + log_var)
         return loss_val / tf.dtypes.cast(tf.shape(y_true)[0], pred.dtype)
 
+class BayesianStochasticLoss(tf.keras.losses.Loss):
+    """
+    Computes the loss for a model outputing f^w and sigma^2
+    in accordance with eq. 12 in https://arxiv.org/pdf/1703.04977.pdf
+    """
+    def __init__(
+            self,
+            ):
+        super(BayesianStochasticLoss, self).__init__()
+
+    @tf.function
+    def call(self, x_true, pred):
+        f_w, var = tf.unstack(pred, axis=0)
+        norm_distr_diag =  tf.squeeze(
+                tf.linalg.diag(
+                tf.random.normal(
+                shape, mean=0, stddev=1)))
+        x_hat = f_w + tf.math.multiply(var, norm_distr_diag)
+        log_sum = tf.log(tf.reduce_sum(tf.exp(x_hat), axis=-1))
+        exp_sum = tf.reduce_sum(tf.exp(x_hat - log_sum), axis=-1)
+    return tf.reduce_sum(tf.log(1/(tf.shape(x_true)[0]) * exp_sum))
+
 
 class EpistemicMeanSquaredError(tf.keras.losses.Loss):
     def __init__(
