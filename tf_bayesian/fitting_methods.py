@@ -5,45 +5,124 @@ from tensorflow.python.keras import callbacks as cbks
 from tensorflow.python.data.ops import dataset_ops
 from tensorflow.python.keras.utils.mode_keys import ModeKeys
 import time
+import glob
+import os
 
 import numpy as np
 
 from tf_bayesian.utils import BatchManager
 
-def tfrecord_fit(
+
+
+
+def tfrecords_fit(
+                 model,
+                 input_directory,
+                 targets=None,
+                 sample_weights=None,
+                 batch_size=1,
+                 epochs=1,
+                 verbose=1,
+                 callbacks=None,
+                 val_inputs=None,
+                 val_targets=None,
+                 val_sample_weights=None,
+                 shuffle=True,
+                 initial_epoch=0,
+                 steps_per_epoch=None,
+                 validation_steps=None,
+                 validation_freq=1,
+                 mode=ModeKeys.TRAIN,
+                 validation_in_fit=False,
+                 prepared_feed_values_from_dataset=False,
+                 steps_name='steps',
+                 **kwargs
+                 ):
+
+    # Currently not used
+    do_validation = val_inputs is not None
+
+    if "steps" in kwargs:
+        steps_per_epoch = kwargs.pop("steps")
+    elif kwargs:
+        raise ValueError("Unknown argument {}".format(kwargs))
+
+    input_paths = glob.glob(os.path.join(input_directory, "*.tfrecords"))
+    path_queue = tf.train.string_input_producer(input_paths, shuffle=mode == ModeKeys.TRAIN)
+
+    def _num_examples(filenames):
+        c = 0
+        for fn in filenames:
+            for _ in tf.python_io.tf_record_iterator(fn):
+                c += 1
+        return c
+
+    if not steps_per_epoch:
+        steps_per_epoch = np.ceil(_num_examples(path_queue)/batch_size)
+    num_samples_or_steps = steps_per_epoch
+
+    callbacks = cbks.configure_callbacks(
+        callbacks,
         model,
-        inputs,
-        targets=None,
-        sample_weights=None,
-        batch_size=None,
-        epochs=1,
-        verbose=1,
-        callbacks=None,
-        val_inputs=None,
-        val_targets=None,
-        val_sample_weights=None,
-        shuffle=True,
-        initial_epoch=0,
-        steps_per_epoch=None,
-        validation_steps=None,
-        validation_freq=1,
-        mode=ModeKeys.TRAIN,
-        validation_in_fit=False,
-        prepared_feed_values_from_dataset=False,
-        steps_name='steps',
-        **kwargs
-):
+        do_validation=do_validation,
+        batch_size=batch_size,
+        epochs=epochs,
+        steps_per_epoch=steps_per_epoch,
+        samples=num_samples_or_steps,
+        verbose=0,  # Handle ProgBarLogger separately in this loop.
+        mode=mode
+    )
+    count_mode = "samples"
+    progbar = training_utils.get_progbar(model, count_mode)
+    progbar.params = callbacks.params
+    progbar.params['verbose'] = verbose
 
+    callbacks.model.stop_training = False
+    callbacks._call_begin_hook(mode)
+    progbar.on_train_begin()
 
-    # TODO: Define decoder
-    # TODO: Define preprocessor
+    def _build_dataset(path_queue, mode, batch_size, parse_examples_batch):
+        dataset = tf.data.Dataset.list_files(
+            path_queue
+        ).interleave(
+            tf.TFRecordDataset
+        ).shuffle(
+            mode == ModeKeys.TRAIN
+        ).batch(
+            batch_size=batch_size,
+            drop_remainder=True
+        ).map(
+            map_func=parse_examples_batch
+        ).cache(
+        ).prefetch(
+            tf.data.experimental.AUTOTUNE
+        )
+        return dataset
 
+    def _parse_examples_batch(examples):
+        data_columns = {
+            "features": tf.io.FixedLenSequenceFeature((), tf.float32, allow_missing=True),
+            "label": tf.io.FixedLenFeature((), tf.float32, -1)
+        }
+        return tf.io.parse_example(examples, data_columns)
 
-    dataset = dataset.map(normalize)
-    dataset = dataset.shuffle(do_shuffle)
-    dataset = dataset.repeat()
-    dataset = dataset.batch(batch_size)
+    def _preprocess(data):
+        # do some processing
+        return data
 
+    def make_iterator(path_queue):
+        dataset = _build_dataset(path_queue, mode, batch_size, _parse_examples_batch())
+        samples = dataset.make_one_shot_iterator().get_next()
+        yield _preprocess(samples)
+
+    def fit_data(self):
+        pass
+
+    # TODO: Make batch manager that can handle TF data as well as generator function. Should be able to handle both
+    # TODO: as well as creating a superclass for all fitting methods. Will ease usage substantially.
+    # TODO: Fitting for both ndarray, generator and TF-data should be combined to one function/class.
+
+    return
 
 
 def ndarray_fit(
@@ -80,7 +159,7 @@ def ndarray_fit(
     if "steps" in kwargs:
         steps_per_epoch = kwargs.pop("steps")
     elif kwargs:
-        raise ValueError("Unkown argument {}".format(kwargs))
+        raise ValueError("Unknown argument {}".format(kwargs))
     if not is_dataset:
         num_samples_or_steps = np.ceil(inputs.shape[0] / batch_size)
     else:
