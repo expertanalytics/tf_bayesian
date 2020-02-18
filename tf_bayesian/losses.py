@@ -44,14 +44,17 @@ class BayesianStochasticLoss(tf.keras.losses.Loss):
     @tf.function
     def call(self, x_true, pred):
         f_w, var = tf.unstack(pred, axis=0)
-        norm_distr_diag =  tf.squeeze(
-                tf.linalg.diag(
-                tf.random.normal(
-                shape, mean=0, stddev=1)))
-        x_hat = f_w + tf.math.multiply(var, norm_distr_diag)
-        log_sum = tf.log(tf.reduce_sum(tf.exp(x_hat), axis=-1))
-        exp_sum = tf.reduce_sum(tf.exp(x_hat - log_sum), axis=-1)
-    return tf.reduce_sum(tf.log(1/(tf.shape(x_true)[0]) * exp_sum))
+        loss = []
+        for i in f_w.shape[0]:
+            norm_distr_diag =  tf.squeeze(
+                    tf.linalg.diag(
+                    tf.random.normal(
+                    shape, mean=0, stddev=1)))
+            x_hat = f_w + tf.math.multiply(var, norm_distr_diag)
+            log_sum = tf.log(tf.reduce_sum(tf.exp(x_hat), axis=-1, keepdims=True))
+            exp_sum = tf.reduce_sum(tf.exp(x_hat - log_sum), axis=-1)
+            loss.append(tf.log(1/(tf.shape(x_true)[0]) * exp_sum))
+    return tf.reduce_sum(loss, axis=0)
 
 
 class EpistemicMeanSquaredError(tf.keras.losses.Loss):
